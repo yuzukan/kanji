@@ -16,6 +16,7 @@
     font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
     background:var(--bg); color:var(--ink);
     padding:12px; max-width:760px; margin:0 auto;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;
   }
   h1{font-size:20px;text-align:center;margin:6px 0 12px;}
   .card{background:var(--panel);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px;}
@@ -35,11 +36,13 @@
   .qtext .blank{display:inline-block;min-width:1.4em;border-bottom:3px solid var(--accent);color:transparent;margin:0 2px;}
   .reading{font-size:16px;color:var(--accent);margin-top:6px;}
 
-  /* 1文字ずつのマス */
+  /* 1文字ずつのマス（4倍サイズ） */
   .boxes{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0;}
-  .box{position:relative;width:120px;height:120px;}
+  .box{position:relative;width:480px;height:480px;max-width:92vw;max-height:92vw;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:none;}
   .box canvas{width:100%;height:100%;background:#fff;border:2px solid var(--line);
-    border-radius:12px;touch-action:none;display:block;}
+    border-radius:12px;touch-action:none;display:block;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
   .box .guide{position:absolute;inset:0;pointer-events:none;}
   .box .guide::before,.box .guide::after{content:"";position:absolute;}
   .box .guide::before{left:0;right:0;top:50%;height:0;border-top:1px dashed #e2ddd0;}
@@ -77,6 +80,7 @@
   <div class="boxes" id="boxes"></div>
 
   <div class="row">
+    <button class="ghost" onclick="undoStroke()">↩️ 戻る</button>
     <button class="ghost" onclick="clearAll()">🧽 消す</button>
     <div class="spacer"></div>
     <button class="primary" id="judgeBtn" onclick="judge()">判定する</button>
@@ -213,12 +217,13 @@ document.getElementById('fileInput').addEventListener('change',e=>{
 /* ============ マス（1文字ごと）============ */
 const boxesEl=document.getElementById('boxes');
 let pads=[]; // {canvas,ctx,strokes,drawing}
+let strokeHistory=[]; // 全マス共通の書いた順番（「戻る」用）
 
 function buildBoxes(n){
-  boxesEl.innerHTML=''; pads=[];
+  boxesEl.innerHTML=''; pads=[]; strokeHistory=[];
   for(let i=0;i<n;i++){
     const box=document.createElement('div'); box.className='box';
-    const cv=document.createElement('canvas'); cv.width=300; cv.height=300;
+    const cv=document.createElement('canvas'); cv.width=1200; cv.height=1200;
     const guide=document.createElement('div'); guide.className='guide';
     const mark=document.createElement('div'); mark.className='mark';
     const recog=document.createElement('div'); recog.className='recog';
@@ -236,8 +241,13 @@ function initPad(p){
     return {x:(e.clientX-r.left)*(p.canvas.width/r.width),
             y:(e.clientY-r.top)*(p.canvas.height/r.height)};
   };
+  // タッチでのドラッグが範囲選択やページスクロールとして扱われないようにする
+  ['touchstart','touchmove','touchend','contextmenu','selectstart'].forEach(type=>{
+    p.canvas.addEventListener(type,e=>e.preventDefault(),{passive:false});
+  });
   p.canvas.addEventListener('pointerdown',e=>{
     e.preventDefault(); p.drawing=true;
+    if(p.canvas.setPointerCapture)p.canvas.setPointerCapture(e.pointerId);
     const pt=posOf(e); p.cur={x:[pt.x],y:[pt.y]};
     ctx.beginPath(); ctx.moveTo(pt.x,pt.y);
   });
@@ -247,17 +257,34 @@ function initPad(p){
     ctx.lineTo(pt.x,pt.y); ctx.stroke();
   });
   const stop=e=>{ if(!p.drawing)return; if(e)e.preventDefault();
-    p.drawing=false; if(p.cur){p.strokes.push(p.cur);p.cur=null;} };
+    p.drawing=false;
+    if(p.cur){ p.strokes.push(p.cur); strokeHistory.push(p); p.cur=null; } };
   p.canvas.addEventListener('pointerup',stop);
   p.canvas.addEventListener('pointerleave',stop);
   p.canvas.addEventListener('pointercancel',stop);
+}
+function redrawPad(p){
+  const ctx=p.ctx;
+  ctx.clearRect(0,0,p.canvas.width,p.canvas.height);
+  p.strokes.forEach(s=>{
+    ctx.beginPath(); ctx.moveTo(s.x[0],s.y[0]);
+    for(let i=1;i<s.x.length;i++)ctx.lineTo(s.x[i],s.y[i]);
+    ctx.stroke();
+  });
+}
+function undoStroke(){
+  if(!strokeHistory.length)return;
+  const p=strokeHistory.pop();
+  p.strokes.pop();
+  redrawPad(p);
+  p.mark.textContent=''; p.mark.className='mark'; p.recog.textContent='';
 }
 function clearPad(p){
   p.ctx.clearRect(0,0,p.canvas.width,p.canvas.height);
   p.strokes=[]; p.cur=null; p.drawing=false;
   p.mark.textContent=''; p.mark.className='mark'; p.recog.textContent='';
 }
-function clearAll(){pads.forEach(clearPad);}
+function clearAll(){pads.forEach(clearPad); strokeHistory=[];}
 function hasAnyInk(){return pads.some(p=>p.strokes.length>0);}
 
 /* ============ 出題 ============ */
