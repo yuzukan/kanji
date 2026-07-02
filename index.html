@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>漢字テスト練習</title>
+<style>
+  :root{
+    --bg:#f4f1ea; --panel:#fff; --ink:#2b2b2b;
+    --accent:#c0392b; --accent2:#2e7d32; --line:#d8d2c4;
+    --shadow:0 2px 10px rgba(0,0,0,.08);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+    background:var(--bg); color:var(--ink);
+    padding:12px; max-width:760px; margin:0 auto;
+  }
+  h1{font-size:20px;text-align:center;margin:6px 0 12px;}
+  .card{background:var(--panel);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .spacer{flex:1;}
+  button{font-family:inherit;font-size:15px;border:none;border-radius:10px;padding:10px 16px;
+    background:#e9e4d8;color:var(--ink);cursor:pointer;transition:transform .05s,background .15s;}
+  button:active{transform:scale(.97);}
+  button.primary{background:var(--accent);color:#fff;}
+  button.ok{background:var(--accent2);color:#fff;}
+  button.ghost{background:transparent;border:1px solid var(--line);}
+  button:disabled{opacity:.5;cursor:default;}
+  .score{font-size:14px;color:#666;text-align:center;margin-bottom:6px;}
+
+  .qlabel{font-size:13px;color:#888;margin-bottom:4px;}
+  .qtext{font-size:26px;font-weight:bold;line-height:1.5;min-height:40px;}
+  .qtext .blank{display:inline-block;min-width:1.4em;border-bottom:3px solid var(--accent);color:transparent;margin:0 2px;}
+  .reading{font-size:16px;color:var(--accent);margin-top:6px;}
+
+  /* 1文字ずつのマス */
+  .boxes{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:14px 0;}
+  .box{position:relative;width:120px;height:120px;}
+  .box canvas{width:100%;height:100%;background:#fff;border:2px solid var(--line);
+    border-radius:12px;touch-action:none;display:block;}
+  .box .guide{position:absolute;inset:0;pointer-events:none;}
+  .box .guide::before,.box .guide::after{content:"";position:absolute;}
+  .box .guide::before{left:0;right:0;top:50%;height:0;border-top:1px dashed #e2ddd0;}
+  .box .guide::after{top:0;bottom:0;left:50%;width:0;border-left:1px dashed #e2ddd0;}
+  .box .mark{position:absolute;top:-6px;right:-6px;font-size:34px;font-weight:bold;
+    line-height:1;text-shadow:0 1px 2px #fff,0 0 3px #fff;}
+  .box .mark.maru{color:var(--accent2);}
+  .box .mark.batsu{color:var(--accent);}
+  .box .recog{position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:12px;color:#999;}
+
+  .result{text-align:center;font-size:56px;font-weight:bold;height:64px;line-height:64px;}
+  .result.maru{color:var(--accent2);}
+  .result.batsu{color:var(--accent);}
+  .answer-reveal{text-align:center;font-size:34px;font-weight:bold;letter-spacing:.15em;min-height:42px;}
+  .hint{font-size:13px;color:#999;text-align:center;margin-top:6px;min-height:18px;}
+
+  textarea{width:100%;min-height:120px;font-family:inherit;font-size:14px;
+    border:1px solid var(--line);border-radius:8px;padding:8px;resize:vertical;}
+  details summary{cursor:pointer;font-weight:bold;padding:4px 0;}
+  label.chk{display:flex;align-items:center;gap:6px;font-size:14px;}
+  .muted{color:#888;font-size:13px;}
+  code{background:#eee;padding:1px 5px;border-radius:4px;}
+</style>
+</head>
+<body>
+
+<h1>✍️ 漢字テスト練習</h1>
+
+<div class="card">
+  <div class="score" id="score">正解 0 / 0 問</div>
+  <div class="qlabel">つぎの ことばを 漢字で 書きましょう</div>
+  <div class="qtext" id="qtext">読み込み中…</div>
+  <div class="reading" id="qreading"></div>
+
+  <div class="boxes" id="boxes"></div>
+
+  <div class="row">
+    <button class="ghost" onclick="clearAll()">🧽 消す</button>
+    <div class="spacer"></div>
+    <button class="primary" id="judgeBtn" onclick="judge()">判定する</button>
+  </div>
+
+  <div class="result" id="result"></div>
+  <div class="answer-reveal" id="answer"></div>
+  <div class="hint" id="hint"></div>
+
+  <div class="row" id="fixRow" style="display:none;justify-content:center;gap:8px;margin-top:6px;">
+    <span class="muted">自動判定が違っていたら直せます：</span>
+    <button class="ok" onclick="override(true)">〇に直す</button>
+    <button class="primary" onclick="override(false)">✕に直す</button>
+  </div>
+
+  <div class="row" id="nextRow" style="display:none;justify-content:center;margin-top:12px;">
+    <button class="primary" onclick="nextQuestion()">つぎの問題 ▶</button>
+  </div>
+</div>
+
+<div class="card">
+  <label class="chk">
+    <input type="checkbox" id="autoMode" checked>
+    自動判定を使う（筆跡認識。オフの時は正解を見て自分で〇×）
+  </label>
+  <div class="muted" style="margin-top:6px;">
+    ゆるさ：
+    <select id="tolerance">
+      <option value="1">きびしい（1番目のみ正解）</option>
+      <option value="5" selected>ふつう（上位5候補まで正解）</option>
+      <option value="10">やさしい（上位10候補まで正解）</option>
+    </select>
+  </div>
+  <div class="muted" id="netNote" style="margin-top:6px;">※ 自動判定はインターネット接続が必要です。</div>
+</div>
+
+<div class="card">
+  <details>
+    <summary>📥 問題データ（ファイルで書き出し／取り込み）</summary>
+    <p class="muted">
+      1行に1問。「答えの漢字 , 読みがな」の形（CSV）。<br>
+      3つ目に例文を書くと、（　）の穴うめ問題になります。<br>
+      例：<code>学校,がっこう</code> ／ <code>勉強,べんきょう,毎日（べんきょう）する。</code>
+    </p>
+
+    <div class="row" style="margin-top:8px;">
+      <button onclick="downloadTemplate()">📄 テンプレートを書き出す</button>
+      <button onclick="downloadCurrent()">💾 いまの問題を書き出す</button>
+    </div>
+
+    <p class="muted" style="margin-top:14px;margin-bottom:4px;">
+      ↓ 編集したファイル（.csv / .txt）を取り込みます。
+    </p>
+    <div class="row">
+      <input type="file" id="fileInput" accept=".csv,.txt,text/csv,text/plain">
+    </div>
+    <div class="muted" id="saveStatus" style="margin-top:8px;"></div>
+  </details>
+</div>
+
+<script>
+/* ============ データ ============ */
+const SAMPLE = `学校,がっこう
+先生,せんせい
+勉強,べんきょう,毎日（べんきょう）する。
+友達,ともだち
+図書館,としょかん
+自然,しぜん
+成功,せいこう
+努力,どりょく
+希望,きぼう
+未来,みらい`;
+
+let questions=[], current=null, correct=0, total=0, judgedThisQ=false;
+
+function parseData(text){
+  return text.split(/\r?\n/).map(l=>l.trim())
+    .filter(l=>l && !l.startsWith('#'))   // 空行と # で始まる説明行は無視
+    .map(l=>{
+      const p=l.split(',').map(s=>s.trim());
+      return {answer:p[0]||'', reading:p[1]||'', sentence:p[2]||''};
+    }).filter(q=>q.answer);
+}
+function loadData(){
+  const saved=localStorage.getItem('kanji_data');
+  const text=saved||SAMPLE;
+  questions=parseData(text);
+}
+
+/* --- ファイル書き出し --- */
+function download(filename,text){
+  // Excelで文字化けしないよう UTF-8 BOM を付ける
+  const blob=new Blob(["﻿"+text],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function downloadTemplate(){
+  const tpl=
+`# 漢字テスト問題ファイル
+# 1行に1問。「答えの漢字,読みがな」の形で書いてください。
+# 3つ目に例文を書くと、（　）の穴うめ問題になります。
+# この # で始まる行は説明なので、消しても残してもかまいません。
+学校,がっこう
+勉強,べんきょう,毎日（べんきょう）する。
+努力,どりょく`;
+  download('漢字テスト_テンプレート.csv',tpl);
+}
+function downloadCurrent(){
+  const saved=localStorage.getItem('kanji_data')||SAMPLE;
+  download('漢字テスト_問題.csv',saved);
+}
+
+/* --- ファイル取り込み --- */
+document.getElementById('fileInput').addEventListener('change',e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const text=reader.result;
+    const parsed=parseData(text);
+    const status=document.getElementById('saveStatus');
+    if(!parsed.length){status.textContent='⚠️ 問題が読み取れませんでした。形式を確認してください。';return;}
+    localStorage.setItem('kanji_data',text);
+    questions=parsed; correct=0; total=0;
+    status.textContent=`✅ 「${file.name}」から ${parsed.length}問を取り込みました。`;
+    nextQuestion();
+  };
+  reader.readAsText(file,'utf-8');
+  e.target.value=''; // 同じファイルを続けて選べるようにする
+});
+
+/* ============ マス（1文字ごと）============ */
+const boxesEl=document.getElementById('boxes');
+let pads=[]; // {canvas,ctx,strokes,drawing}
+
+function buildBoxes(n){
+  boxesEl.innerHTML=''; pads=[];
+  for(let i=0;i<n;i++){
+    const box=document.createElement('div'); box.className='box';
+    const cv=document.createElement('canvas'); cv.width=300; cv.height=300;
+    const guide=document.createElement('div'); guide.className='guide';
+    const mark=document.createElement('div'); mark.className='mark';
+    const recog=document.createElement('div'); recog.className='recog';
+    box.append(cv,guide,mark,recog); boxesEl.append(box);
+    const ctx=cv.getContext('2d');
+    const pad={canvas:cv,ctx,strokes:[],drawing:false,cur:null,mark,recog};
+    initPad(pad); pads.push(pad);
+  }
+}
+function initPad(p){
+  const ctx=p.ctx;
+  ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=16; ctx.strokeStyle='#1a1a1a';
+  const posOf=e=>{
+    const r=p.canvas.getBoundingClientRect();
+    return {x:(e.clientX-r.left)*(p.canvas.width/r.width),
+            y:(e.clientY-r.top)*(p.canvas.height/r.height)};
+  };
+  p.canvas.addEventListener('pointerdown',e=>{
+    e.preventDefault(); p.drawing=true;
+    const pt=posOf(e); p.cur={x:[pt.x],y:[pt.y]};
+    ctx.beginPath(); ctx.moveTo(pt.x,pt.y);
+  });
+  p.canvas.addEventListener('pointermove',e=>{
+    if(!p.drawing)return; e.preventDefault();
+    const pt=posOf(e); p.cur.x.push(pt.x); p.cur.y.push(pt.y);
+    ctx.lineTo(pt.x,pt.y); ctx.stroke();
+  });
+  const stop=e=>{ if(!p.drawing)return; if(e)e.preventDefault();
+    p.drawing=false; if(p.cur){p.strokes.push(p.cur);p.cur=null;} };
+  p.canvas.addEventListener('pointerup',stop);
+  p.canvas.addEventListener('pointerleave',stop);
+  p.canvas.addEventListener('pointercancel',stop);
+}
+function clearPad(p){
+  p.ctx.clearRect(0,0,p.canvas.width,p.canvas.height);
+  p.strokes=[]; p.cur=null; p.drawing=false;
+  p.mark.textContent=''; p.mark.className='mark'; p.recog.textContent='';
+}
+function clearAll(){pads.forEach(clearPad);}
+function hasAnyInk(){return pads.some(p=>p.strokes.length>0);}
+
+/* ============ 出題 ============ */
+function chars(s){return Array.from(s);}
+function nextQuestion(){
+  if(!questions.length)loadData();
+  if(!questions.length)return;
+  current=questions[Math.floor(Math.random()*questions.length)];
+  judgedThisQ=false;
+
+  const qtext=document.getElementById('qtext');
+  if(current.sentence){
+    qtext.innerHTML=current.sentence.replace(/（.*?）|\(.*?\)/,'<span class="blank">■</span>');
+  }else{
+    qtext.textContent=current.reading||current.answer;
+  }
+  document.getElementById('qreading').textContent=current.reading?'読み：'+current.reading:'';
+
+  buildBoxes(chars(current.answer).length);
+  document.getElementById('result').textContent=''; document.getElementById('result').className='result';
+  document.getElementById('answer').textContent='';
+  document.getElementById('hint').textContent='';
+  document.getElementById('fixRow').style.display='none';
+  document.getElementById('nextRow').style.display='none';
+  document.getElementById('judgeBtn').style.display=''; document.getElementById('judgeBtn').disabled=false;
+  updateScore();
+}
+function updateScore(){document.getElementById('score').textContent=`正解 ${correct} / ${total} 問`;}
+
+/* ============ 筆跡認識（Google Input Tools）============ */
+async function recognizeStrokes(strokes,w,h){
+  const ink=strokes.map(s=>[s.x.map(Math.round),s.y.map(Math.round)]);
+  const body={options:"enable_pre_space",
+    requests:[{writing_guide:{writing_area_width:w,writing_area_height:h},ink,language:"ja"}]};
+  const res=await fetch("https://inputtools.google.com/request?itc=ja-t-i0-handwrit&app=quiz",{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  const data=await res.json();
+  if(data[0]==="SUCCESS"&&data[1]&&data[1][0])return data[1][0][1]||[];
+  return [];
+}
+
+/* ============ 判定 ============ */
+async function judge(){
+  if(!current||judgedThisQ)return;
+  if(!hasAnyInk()){document.getElementById('hint').textContent='まだ何も書かれていません。';return;}
+
+  if(!document.getElementById('autoMode').checked){ manualReveal(); return; }
+
+  const btn=document.getElementById('judgeBtn');
+  btn.disabled=true;
+  document.getElementById('hint').textContent='筆跡を認識中…';
+  const ans=chars(current.answer);
+  const tol=parseInt(document.getElementById('tolerance').value,10);
+
+  try{
+    let allOk=true;
+    for(let i=0;i<pads.length;i++){
+      const p=pads[i];
+      let ok=false, top='';
+      if(p.strokes.length){
+        const cands=await recognizeStrokes(p.strokes,p.canvas.width,p.canvas.height);
+        top=cands[0]||'';
+        ok=cands.slice(0,tol).includes(ans[i]);
+      }
+      p.recog.textContent=top?('→ '+top):'（空白）';
+      p.mark.textContent=ok?'〇':'✕';
+      p.mark.className='mark '+(ok?'maru':'batsu');
+      if(!ok)allOk=false;
+    }
+    finalize(allOk);
+    document.getElementById('hint').textContent='認識結果は各マスの下に表示。違っていたら下のボタンで直せます。';
+    document.getElementById('fixRow').style.display='flex';
+  }catch(err){
+    document.getElementById('hint').textContent='⚠️ 自動判定に接続できませんでした。正解を見て自分で〇×してください。';
+    manualReveal();
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+function manualReveal(){
+  document.getElementById('answer').textContent='正解：'+current.answer;
+  document.getElementById('hint').textContent='書いた字と見くらべて選んでください。';
+  document.getElementById('judgeBtn').style.display='none';
+  document.getElementById('fixRow').style.display='flex';
+}
+
+function finalize(isCorrect){
+  judgedThisQ=true; total++;
+  const res=document.getElementById('result');
+  if(isCorrect){correct++; res.textContent='〇'; res.className='result maru';}
+  else{res.textContent='✕'; res.className='result batsu';}
+  document.getElementById('answer').textContent='正解：'+current.answer;
+  document.getElementById('judgeBtn').style.display='none';
+  document.getElementById('nextRow').style.display='flex';
+  updateScore();
+}
+
+// 自動判定を人が上書き
+function override(isCorrect){
+  // これまでの判定を取り消してから付け直す
+  if(judgedThisQ){
+    total--; if(document.getElementById('result').classList.contains('maru'))correct--;
+  }
+  judgedThisQ=false;
+  finalize(isCorrect);
+  document.getElementById('fixRow').style.display='none';
+}
+
+/* ============ 起動 ============ */
+loadData();
+nextQuestion();
+</script>
+</body>
+</html>
